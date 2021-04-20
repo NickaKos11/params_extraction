@@ -1,0 +1,1060 @@
+classdef Params_extraction_20 < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure              matlab.ui.Figure
+        nfLabel_string        matlab.ui.control.Label
+        RsLabel_string        matlab.ui.control.Label
+        U0Label_string        matlab.ui.control.Label
+        VAFLabel_Value        matlab.ui.control.Label
+        RCLabel_Value         matlab.ui.control.Label
+        nfLabel_Value         matlab.ui.control.Label
+        Label_TransferBox     matlab.ui.control.Label
+        TransferBox           matlab.ui.control.ListBox
+        Label_OutputBox       matlab.ui.control.Label
+        OutputBox             matlab.ui.control.ListBox
+        Button_Spice          matlab.ui.control.Button
+        Transfer_logX_Check   matlab.ui.control.CheckBox
+        Transfer_logY_Check   matlab.ui.control.CheckBox
+        Output_logY_Check     matlab.ui.control.CheckBox
+        Output_logX_Check     matlab.ui.control.CheckBox
+        RbLabel_string        matlab.ui.control.Label
+        RbLabel_Value         matlab.ui.control.Label
+        IsLabel_string        matlab.ui.control.Label
+        IsLabel_Value         matlab.ui.control.Label
+        Is_Spinner            matlab.ui.control.Spinner
+        Rb_Spinner            matlab.ui.control.Spinner
+        VAF_Spinner           matlab.ui.control.Spinner
+        RC_Spinner            matlab.ui.control.Spinner
+        nf_Spinner            matlab.ui.control.Spinner
+        Is_ResetButton        matlab.ui.control.Button
+        Rb_ResetButton        matlab.ui.control.Button
+        VAF_ResetButton       matlab.ui.control.Button
+        RC_ResetButton        matlab.ui.control.Button
+        nf_ResetButton        matlab.ui.control.Button
+        Bf_Spinner            matlab.ui.control.Spinner
+        Bf_ResetButton        matlab.ui.control.Button
+        BfLabel_string        matlab.ui.control.Label
+        BfLabel_Value         matlab.ui.control.Label
+        Label_party           matlab.ui.control.Label
+        Label_party_number    matlab.ui.control.Label
+        ButtonGroup           matlab.ui.container.ButtonGroup
+        Label                 matlab.ui.control.Label
+        TextArea_table        matlab.ui.control.TextArea
+        Button_path_table     matlab.ui.control.Button
+        Label_2               matlab.ui.control.Label
+        TextArea_project      matlab.ui.control.TextArea
+        Button_path_project   matlab.ui.control.Button
+        Button_path_spice     matlab.ui.control.Button
+        LTSpiceTextAreaLabel  matlab.ui.control.Label
+        TextArea_spice        matlab.ui.control.TextArea
+        CheckBox              matlab.ui.control.CheckBox
+        ParamButton           matlab.ui.control.Button
+        UIAxes_Transfer       matlab.ui.control.UIAxes
+        UIAxes_Output         matlab.ui.control.UIAxes
+    end
+
+    
+    properties (Access = private)
+        s;
+        tempcell;
+        x;
+        y;
+        nf;
+        is;
+        Rb;
+        VAF;
+        RC;
+        U0;
+        kp;
+        maxbf;
+        data;
+        TransferParam;
+        OutputParam;
+        h_spice_icvc;
+        h_spice_ibvb;
+        h_icvc;
+        h_ibvb;
+        Param_window;
+    end
+    
+    methods (Access = private)
+        
+        function Build_graphs(app,filename)
+            cla(app.UIAxes_Transfer); %очистка графика
+            cla(app.UIAxes_Output); %очистка графика
+            app.h_icvc= []; 
+            app.h_spice_icvc = [];
+            app.h_ibvb = [];
+            app.h_spice_ibvb = [];
+            app.OutputBox.Items = {};
+            app.TransferBox.Items = {};
+            
+            [~,~,values] = xlsread(filename);
+            app.data = struct("XY",[],'Type','','Test_Number',0,'Param','');
+            i = 2;
+            Num = 0;%Номер структуры (Одна структура один график)
+            Test_num = values{i,1};
+            Type_name = string(values{i,4});
+            Param_name = string(values{i,2});
+            k = 0;%Переменная для правильного отображения данных при смене структуры
+            while i <= length(values)%&&(values{i,1} == Test_num)
+                if (values{i,1} ~= Test_num)||(values{i,4} ~= Type_name)||(values{i,2} ~= Param_name)
+                    Num = Num + 1;
+                    Test_num = values{i,1};
+                    Type_name = string(values{i,4});
+                    Param_name = string(values{i,2});
+                    k = i - 2;
+                end
+                if values{i,5}=='$'
+                    i = i + 1;
+                    if Num > 0
+                        Num = Num - 1;
+                    end
+                    continue;
+                end
+                app.data(Num).XY((i-1)-k,1) = str2double(values{i,8});
+                app.data(Num).XY((i-1)-k,2) = str2double(values{i,5});
+                app.data(Num).Type = values{i,4};
+                app.data(Num).Test_Number = values{i,1};
+                app.data(Num).Param = values{i,2};
+                C = textscan(app.data(Num).Param, '%s%f','delimiter','='); 
+                C = C{:,2};
+                app.data(Num).Param = C;
+                i = i + 1;
+            end
+   
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            %% Params
+         
+            %% VAF (icvc)
+            %ИЗМЕНИТЬ ПО ДАННЫМ ИЗ ТЕСТЕРА
+            data_num = 15; %Линия выходной характеристики с наибольшим или средним Ib
+            diffY = diff(app.data(data_num).XY(:,2));
+            
+            ind_s= 1;
+            for i = 2:length(diffY)
+                if abs(diffY(i)-diffY(i-1))>0.2*diffY(i-1)
+                    ind_s = i+5;
+                  break;
+                end
+            end
+            
+            ind_e=1;
+            for i = ind_s:length(diffY)
+                if diffY(i) == 0
+                    ind_e=i-1;
+                    break
+                end
+            end
+           
+            Ic=app.data(data_num).XY(:,2);
+            Uce=app.data(data_num).XY(:,1);
+            VAFI = Ic(ind_s:ind_e);
+            VAFUce = Uce(ind_s:ind_e);
+            dIc = VAFI(length(VAFI)) - VAFI(1);
+            dUce = VAFUce(length(VAFUce)) - VAFUce(1);
+                        
+            app.VAF = (dUce*VAFI(1)/dIc) - VAFUce(1);
+            
+            %% RC (icvc)
+            
+            Ic=app.data(data_num).XY(:,2);
+            Uce=app.data(data_num).XY(:,1);
+            RCI = Ic(1:ind_s-5);
+            RCUce = Uce(1:ind_s-5);
+            dIc2 = RCI(length(RCI));
+            dUce2 = RCUce(length(RCUce));
+                        
+            app.RC = dUce2*1000/dIc2; %умножаем на 1000, так как Ic дан в мА
+            
+            %% Is,Nf (icvb)
+            %ИЗМЕНИТЬ ПО ДАННЫМ ИЗ ТЕСТЕРА
+            data_num = 8;% Характеристика Ic = f(Ube)
+            Ilog = log10(app.data(data_num).XY(:,2)); %логарифмируем ось с током
+            diffI = diff(Ilog); %производная
+
+            maxr0 = max(diffI);
+
+            %находим максимальную производную определяем значение i-3
+
+            for i = 1:length(diffI)
+                if diffI(i)==maxr0
+                    i1=i;
+                    i2=i-3;
+                    maxrk=diffI(i-3);
+                end
+            end
+
+            Ube1 = app.data(data_num).XY(i2,1);
+            Ube2 = app.data(data_num).XY(i1,1);
+            Ic1 = app.data(data_num).XY(i2,2);
+            Ic2 = app.data(data_num).XY(i1,2);
+ 
+            
+        yr0 = 1.0;
+        xr0=1e-19; %возьмем их за начальное приближение
+        xr = (Ic1/(exp(Ube1/(0.026*yr0))-1))/1000;  
+        yr = Ube2/(0.026*log(Ic2/(1000*xr)));
+        
+        
+        e = 1e-19; %точность
+        k = 0; %счетчик итераций
+        
+        while or((abs(xr - xr0 ) > e), (abs(yr - yr0) > e)) %пока точность не будет достигнута
+        xr0 = xr;
+        yr0 = yr;
+        xr = (Ic1/(exp(Ube1/(0.026*yr0))-1))/1e6;
+        yr = Ube2/(0.026*log(Ic2/(1e6*xr)));
+        k = k + 1;
+        end
+        
+        app.is=xr;
+        app.nf=yr;
+        
+        %Расчет Rb
+        l=length(app.data(data_num).XY);
+        Ube3 = app.data(data_num).XY(l,1);
+        Ic3 = app.data(data_num).XY(l,2);
+        massIc = app.data(data_num).XY(:,2);
+        data_num = 3;%Поменять по данным из тестера! (Ib(Ube))
+        l=length(app.data(data_num).XY);
+        Ib3 = app.data(data_num).XY(l,2);
+        massIb = app.data(data_num).XY(:,2);
+        app.Rb = abs((Ube3 - app.nf*0.026*log(Ic3/(app.is*1e6) + 1))/(Ib3*1e-6));
+        
+        %определение bf 
+        app.maxbf = 0;
+        for i = 1:length(massIc)
+            if massIc(i)/massIb(i) > app.maxbf
+                app.maxbf=massIc(i)/massIb(i);
+            end
+        end
+        
+        %Построение графиков
+            num_of_array_of_params_Transfer = 1;
+            num_of_array_of_params_Output = 1;
+            plot_ind_icvc = 1;
+            plot_ind_ibvb = 1;
+            
+            for i = 1:length(app.data)
+                if app.data(i).Type == "Input" 
+                    app.h_icvc(plot_ind_icvc) = plot(app.UIAxes_Transfer,app.data(i).XY(:,1),app.data(i).XY(:,2),'.');
+                    set(app.h_icvc(plot_ind_icvc), {'DisplayName'},{string(app.data(i).Param)});
+                    legend(app.UIAxes_Transfer, 'show')
+                    hold(app.UIAxes_Transfer, 'on');
+                    plot_ind_icvc = plot_ind_icvc + 1;
+                    app.TransferBox.Items = [app.TransferBox.Items,string(app.data(i).Param)];
+                    app.TransferParam(num_of_array_of_params_Transfer) = app.data(i).Param;
+                    num_of_array_of_params_Transfer = num_of_array_of_params_Transfer + 1;
+                end
+                if app.data(i).Type == "Output"
+                    app.h_ibvb(plot_ind_ibvb) = plot(app.UIAxes_Output,app.data(i).XY(:,1),app.data(i).XY(:,2),'.');
+                    set(app.h_ibvb(plot_ind_ibvb), {'DisplayName'},{string(app.data(i).Param)});
+                    legend(app.UIAxes_Output, 'show')
+                    hold(app.UIAxes_Output, 'on');
+                    plot_ind_ibvb = plot_ind_ibvb + 1;
+                    app.OutputBox.Items = [app.OutputBox.Items,string(app.data(i).Param)];
+                    app.OutputParam(num_of_array_of_params_Output) = string(app.data(i).Param);
+                    num_of_array_of_params_Output = num_of_array_of_params_Output + 1;
+                end
+                app.data(i).XY(:,3)=missing;
+            end
+            
+           
+            app.TransferBox.Value = app.TransferBox.Items;
+            app.OutputBox.Value = app.OutputBox.Items;
+            app.TransferBox.Enable = true;
+            app.OutputBox.Enable = true;
+            app.Label_TransferBox.Enable = true;
+            app.Label_OutputBox.Enable = true;
+            app.Label_party_number.Visible = true;
+              
+            app.IsLabel_Value.Text = string(app.is);
+            app.RbLabel_Value.Text = string(app.Rb);
+            app.VAFLabel_Value.Text = string(app.VAF);
+            app.RCLabel_Value.Text = string(app.RC);
+            app.nfLabel_Value.Text = string(app.nf);
+            app.BfLabel_Value.Text = string(app.maxbf);
+            
+            app.Is_Spinner.Value = app.is;
+            app.Rb_Spinner.Value = app.Rb;
+            app.VAF_Spinner.Value = app.VAF;
+            app.RC_Spinner.Value = app.RC;
+            app.nf_Spinner.Value = app.nf;
+            app.Bf_Spinner.Value = app.maxbf;
+            app.Is_Spinner.Step = app.is * 1e-1;
+            app.VAF_Spinner.Step = app.VAF * 1e-1;
+            app.RC_Spinner.Step = app.RC * 1e-1;
+            app.nf_Spinner.Step = app.nf * 1e-1;
+            app.Bf_Spinner.Step = app.maxbf*1e-1;
+        end
+    end
+    
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Code that executes after component creation
+        function startupFcn(app)
+            p = dir;
+            app.TextArea_project.Value = p.folder;
+            fid = fopen("paths.txt",'rt');
+            if fid ~= -1
+               C = textscan(fid,"%s","delimiter","|");
+               if length(C{1})==4
+                   app.TextArea_table.Value = C{1}{1};
+                   app.TextArea_project.Value = C{1}{2};
+                   app.TextArea_spice.Value = C{1}{3};
+                   app.CheckBox.Value = 1;
+               end
+               fid = fclose(fid);
+            end
+            
+            if ~isempty(char(app.TextArea_table.Value))
+                app.Build_graphs(string(app.TextArea_table.Value))
+            end
+            
+        end
+
+        % Button pushed function: Button_path_table
+        function Button_path_tablePushed(app, event)
+            [file,path] = uigetfile({'*.xlsx';'*.dbf';'*.xls'});
+            drawnow;
+            figure(app.UIFigure);
+            
+            %addpath(path);
+            app.TextArea_table.Value = [path, file];
+            filename = app.TextArea_table.Value;
+            filename = string(filename);
+            
+            app.Build_graphs(filename);
+            
+        end
+
+        % Value changed function: TransferBox
+        function TransferBoxValueChanged(app, event)
+            value = app.TransferBox.Value;
+            cla(app.UIAxes_Transfer);
+            app.h_icvc= [];
+            app.h_spice_icvc = [];
+            %app.Test_Label1.Text = string(app.TransferParam);
+            %app.Test_Label2.Text = value;
+            check = ismember(string(app.TransferParam),value);
+            j = 1;
+            plot_ind_icvc = 1;
+            for i = 1:length(app.data)
+                if (app.data(i).Type == "Input")
+                    if (check(j) == 1)
+                        app.h_icvc(plot_ind_icvc) = plot(app.UIAxes_Transfer,app.data(i).XY(:,1),app.data(i).XY(:,2),'.');
+                        set(app.h_icvc(plot_ind_icvc), {'DisplayName'},{string(app.data(i).Param)});
+                        legend(app.UIAxes_Transfer, 'show')
+                        hold(app.UIAxes_Transfer, 'on');
+                        if ~prod(ismissing(app.data(i).XY(:,3)))
+                            app.h_spice_icvc(plot_ind_icvc) = plot(app.UIAxes_Transfer,app.data(i).XY(:,1),app.data(i).XY(:,3));
+                            set(app.h_spice_icvc(plot_ind_icvc),{'Color'},{get(app.h_icvc(plot_ind_icvc),'Color')},{'DisplayName'},{string(app.data(i).Param)});
+                            hold(app.UIAxes_Transfer, 'on');
+                        end
+                        plot_ind_icvc = plot_ind_icvc + 1;
+                    end
+                    j = j + 1;
+                end
+            end
+        end
+
+        % Value changed function: OutputBox
+        function OutputBoxValueChanged(app, event)
+            value = app.OutputBox.Value;
+            cla(app.UIAxes_Output);
+            app.h_ibvb = [];
+            app.h_spice_ibvb = [];
+            %app.Test_Label1.Text = string(app.OutputParam);
+            %app.Test_Label2.Text = value;
+            check = ismember(string(app.OutputParam),value);
+            j = 1;
+            plot_ind_ibvb = 1;
+            for i = 1:length(app.data)
+                if (app.data(i).Type == "Output")
+                    if (check(j) == 1)
+                        app.h_ibvb(plot_ind_ibvb) = plot(app.UIAxes_Output,app.data(i).XY(:,1),app.data(i).XY(:,2),'.');
+                        set(app.h_ibvb(plot_ind_ibvb), {'DisplayName'},{string(app.data(i).Param)});
+                        legend(app.UIAxes_Output, 'show')
+                        hold(app.UIAxes_Output, 'on');
+                        if ~prod(ismissing(app.data(i).XY(:,3)))
+                            app.h_spice_ibvb(plot_ind_ibvb) = plot(app.UIAxes_Output,app.data(i).XY(:,1),app.data(i).XY(:,3));
+                            set(app.h_spice_ibvb(plot_ind_ibvb),{'Color'},{get(app.h_ibvb(plot_ind_ibvb),'Color')},{'DisplayName'},{string(app.data(i).Param)});
+                            hold(app.UIAxes_Output, 'on');
+                        end
+                        plot_ind_ibvb = plot_ind_ibvb + 1;
+                    end
+                    j = j + 1;
+                end
+            end
+        end
+
+        % Button pushed function: Button_Spice
+        function Button_SpicePushed(app, event)
+   
+            project_path = string(app.TextArea_project.Value);
+            netlist_ibVb = project_path+"/B_ibVb.cir";
+            netlist_icVc = project_path+"/B__icVc.cir";
+            spice_path = string(app.TextArea_spice.Value);
+            
+            code_ibVb = ["\r\n"+...
+                "Vb N002 0 0\r\n"+...
+                "Vc N001 0 {X}\r\n"+...
+                "Q1 N001 N002 0 0 Kostina\r\n"+...
+                ".model Q1 npn %s\r\n"+...
+                ".step param X LIST %s\r\n"+...
+                ".dc Vb %s\r\n"+...
+                ".backanno\r\n"+...
+                ".end\r\n"];
+            code_icVc = ["\r\n"+...
+                "Vc1 N001 0 0\r\n"+...
+                "Ib 0 N002 {X}\r\n"+...
+                "Q1 N001 N002 0 0 Kostina\r\n"+...
+                ".model Q1 npn %s\r\n"+...
+                ".step param X LIST %s\r\n"+...
+                ".dc Vc1 %s\r\n"+...
+                ".backanno\r\n"+...
+                ".end\r\n"];
+            
+            
+            model_params = sprintf("IS=%g BF=%g VAF=%g NF=%g RB=%g RC=%g", app.is, app.maxbf, app.VAF, app.nf, app.Rb, app.RC);
+            ind_1 = 1;
+            ind_2 = 1;
+            for i = 1:length(app.data)
+                if app.data(i).Type == "Input"
+                    Transfer_param(ind_1) = app.data(i).Param;
+                    ind_1 = ind_1 + 1;
+                    ind_vbe = i;
+                end
+                if app.data(i).Type == "Output"
+                    Output_param(ind_2) = app.data(i).Param;
+                    ind_2 = ind_2 + 1;
+                    ind_vce = i;
+                end
+            end
+            vce_values = sprintf("%g ",Transfer_param);
+            ib_values = sprintf("%g ",Output_param);
+            
+            
+            start_stop_step_vbe = sprintf("%g ",min(app.data(ind_vbe).XY(:,1)),max(app.data(ind_vbe).XY(:,1)),abs(app.data(ind_vbe).XY(2,1)-app.data(ind_vbe).XY(1,1)));
+            start_stop_step_vce = sprintf("%g ",min(app.data(ind_vce).XY(:,1)),max(app.data(ind_vce).XY(:,1)),abs(app.data(ind_vce).XY(2,1)-app.data(ind_vce).XY(1,1)));
+            
+            fid = fopen(netlist_ibVb,'w+');
+            fprintf(fid,code_ibVb,model_params,vce_values,start_stop_step_vbe);
+            fid = fclose(fid);
+            fid = fopen(netlist_icVc,'w+');
+            fprintf(fid,code_icVc,model_params,ib_values,start_stop_step_vce);
+            fid = fclose(fid);
+
+            system('"' + spice_path + '"' + ' -b '+ '"' + netlist_ibVb+ '"');
+            system('"' + spice_path + '"' + ' -b '+ '"' + netlist_icVc+ '"');
+            
+            raw_data_ibVb = LTspice2Matlab(project_path + "/Kostina_ibVb.raw");
+            raw_data_icVc = LTspice2Matlab(project_path + "/Kostina_icVc.raw");
+            
+            ind = 0;
+            C1 = raw_data_ibVb.variable_mat;
+            for i = 1:length(raw_data_ibVb.variable_name_list)
+                if startsWith(string(raw_data_ibVb.variable_name_list(i)),"Ib") == 1
+                    ind = i;
+                    break;
+                end
+            end
+            C1(3,:,:)=[];
+            C1(ind+1:end,:,:)=[];
+            C1 = permute(C1,[2,1,3]); % транспонирует
+            C1(:,3,:)=C1(:,3,:)*1000000; % A -> mA
+            
+            ind = 0;
+            C2 = raw_data_icVc.variable_mat;
+            for i = 1:length(raw_data_icVc.variable_name_list)
+                if startsWith(string(raw_data_icVc.variable_name_list(i)),"Ib") == 1
+                    ind = i;
+                    break;
+                end
+            end
+            C2(2,:,:)=[];
+            C2(ind+1:end,:,:)=[];
+            C2 = permute(C2,[2,1,3]);
+            C2(:,2,:) = C2(:,2,:)*1000;
+            
+            for i = 1:2%убирает лишнюю дробную часть
+                C1(:,i,:)=round(C1(:,i,:),4);
+                C2(:,i,:)=round(C2(:,i,:),4);
+            end
+             check_array = zeros(1,length(C1(1,1,:)));
+            for i = 1:length(app.data)
+                if prod(check_array > 0)
+                    break;
+                end
+                for j = 1:length(C1(1,1,:))
+                    if (C1(1,2,j)==app.data(i).Param)&&(app.data(i).Type == "Input")
+                        app.data(i).XY(:,3) = C1(:,3,j);
+                        check_array(j)=1;
+                        break;
+                    end
+                end
+            end 
+            check_array = zeros(1,length(C2(1,2,:)));
+            for i = 1:length(app.data)
+                if prod(check_array > 0)
+                    break;
+                end
+                for j = 1:length(C2(1,2,:))
+                    if (round(C2(1,3,j),3)==round(app.data(i).Param,3))&&(app.data(i).Type == "Output")
+                        app.data(i).XY(:,3) = C2(:,2,j);
+                        check_array(j)=1;
+                        break;
+                    end
+                end
+            end
+            
+            
+    
+            value_transfer = app.TransferBox.Value;
+            check_transfer = ismember(string(app.TransferParam),value_transfer);
+            value_output = app.OutputBox.Value;
+            check_output = ismember(string(app.OutputParam),value_output);
+            j_1 = 1;
+            j_2 = 1;
+            plot_ind_ibvb = 1;
+            plot_ind_icvc = 1;
+            for i = 1:length(app.data)
+                if (app.data(i).Type == "Input")
+                    if (check_transfer(j_1) == 1)
+                        app.h_spice_icvc(plot_ind_icvc) = plot(app.UIAxes_Transfer,app.data(i).XY(:,1),app.data(i).XY(:,3));
+                        %app.h_spice_idvg(plot_ind_idvg).Color = app.h_idvg(plot_ind_idvg).Color;
+                        set(app.h_spice_icvc(plot_ind_icvc),{'Color'},{get(app.h_icvc(plot_ind_icvc),'Color')},{'DisplayName'},{string(app.data(i).Param)});
+                        hold(app.UIAxes_Transfer, 'on');
+                        plot_ind_icvc = plot_ind_icvc + 1;
+                    end
+                    j_1 = j_1 + 1;
+                end
+                if (app.data(i).Type == "Output")
+                    if (check_output(j_2) == 1)
+                        app.h_spice_ibvb(plot_ind_ibvb) = plot(app.UIAxes_Output,app.data(i).XY(:,1),app.data(i).XY(:,3));
+                        set(app.h_spice_ibvb(plot_ind_ibvb),{'Color'},{get(app.h_ibvb(plot_ind_ibvb),'Color')},{'DisplayName'},{string(app.data(i).Param)});
+                        hold(app.UIAxes_Output, 'on');
+                        plot_ind_ibvb = plot_ind_ibvb + 1;
+                    end
+                    j_2 = j_2 + 1;
+                end
+            end
+        end
+
+        % Value changed function: Transfer_logX_Check
+        function Transfer_logX_CheckValueChanged(app, event)
+            value = app.Transfer_logX_Check.Value;
+            if value
+                app.UIAxes_Transfer.XScale = "log";
+            else
+                app.UIAxes_Transfer.XScale = "linear";
+            end
+        end
+
+        % Value changed function: Transfer_logY_Check
+        function Transfer_logY_CheckValueChanged(app, event)
+            value = app.Transfer_logY_Check.Value;
+            if value
+                app.UIAxes_Transfer.YScale = "log";
+            else
+                app.UIAxes_Transfer.YScale = "linear";
+            end
+        end
+
+        % Value changed function: Output_logX_Check
+        function Output_logX_CheckValueChanged(app, event)
+            value = app.Output_logX_Check.Value;
+            if value
+                app.UIAxes_Output.XScale = "log";
+            else
+                app.UIAxes_Output.XScale = "linear";
+            end
+        end
+
+        % Value changed function: Output_logY_Check
+        function Output_logY_CheckValueChanged(app, event)
+            value = app.Output_logY_Check.Value;
+            if value
+                app.UIAxes_Output.YScale = "log";
+            else
+                app.UIAxes_Output.YScale = "linear";
+            end
+        end
+
+        % Value changed function: Is_Spinner
+        function Is_SpinnerValueChanged(app, event)
+            value = app.Is_Spinner.Value;
+            app.is = value;
+            app.Is_Spinner.Step = value * 1e-1;
+            Button_SpicePushed(app, event);
+        end
+
+        % Value changed function: Rb_Spinner
+        function Rb_SpinnerValueChanged(app, event)
+            value = app.Rb_Spinner.Value;
+            app.Rb = value;
+            app.Rb_Spinner.Step = value * 1e-1;
+        end
+
+        % Callback function
+        function TOX_SpinnerValueChanged(app, event)
+            value = app.TOX_Spinner.Value;
+            app.TOX = value;
+            app.TOX_Spinner.Step = value * 1e-1;
+        end
+
+        % Value changed function: VAF_Spinner
+        function VAF_SpinnerValueChanged(app, event)
+            value = app.VAF_Spinner.Value;
+            app.VAF = value;
+            app.VAF_Spinner.Step = value * 1e-1;
+        end
+
+        % Value changed function: RC_Spinner
+        function RC_SpinnerValueChanged(app, event)
+            value = app.RC_Spinner.Value;
+            app.RC = value;
+            app.RC_Spinner.Step = value * 1e-1;
+        end
+
+        % Value changed function: nf_Spinner
+        function nf_SpinnerValueChanged(app, event)
+            value = app.nf_Spinner.Value;
+            app.nf = value;
+            app.nf_Spinner.Step = value * 1e-1;
+        end
+
+        % Button pushed function: Is_ResetButton
+        function Is_ResetButtonPushed(app, event)
+            app.Is_Spinner.Value = str2double(app.IsLabel_Value.Text);
+            app.is = app.Is_Spinner.Value;
+            app.Is_Spinner.Step = app.is * 1e-1;
+        end
+
+        % Button pushed function: Rb_ResetButton
+        function Rb_ResetButtonPushed(app, event)
+            app.Rb_Spinner.Value = str2double(app.RbLabel_Value.Text);
+            app.Rb = app.Rb_Spinner.Value;
+            app.Rb_Spinner.Step = app.Rb * 1e-1;
+        end
+
+        % Callback function
+        function TOX_ResetButtonPushed(app, event)
+            app.TOX_Spinner.Value = str2double(app.TOXlabel_Value.Text);
+            app.TOX = app.TOX_Spinner.Value;
+            app.TOX_Spinner.Step = app.TOX * 1e-1;
+        end
+
+        % Button pushed function: VAF_ResetButton
+        function VAF_ResetButtonPushed(app, event)
+            app.VAF_Spinner.Value = str2double(app.VAFLabel_Value.Text);
+            app.VAF = app.VAF_Spinner.Value;
+            app.VAF_Spinner.Step = app.VAF * 1e-1;
+        end
+
+        % Button pushed function: RC_ResetButton
+        function RC_ResetButtonPushed(app, event)
+            app.RC_Spinner.Value = str2double(app.RCLabel_Value.Text);
+            app.RC = app.RC_Spinner.Value;
+            app.RC_Spinner.Step = app.RC * 1e-1;
+        end
+
+        % Button pushed function: nf_ResetButton
+        function nf_ResetButtonPushed(app, event)
+            app.nf_Spinner.Value = str2double(app.nfLabel_Value.Text);
+            app.nf = app.nf_Spinner.Value;
+            app.nf_Spinner.Step = app.nf * 1e-1;
+        end
+
+        % Callback function
+        function ButtonPushed(app, event)
+            p = dir;
+            app.Test_Label1.Text = p(1).folder;
+        end
+
+        % Value changed function: Bf_Spinner
+        function Bf_SpinnerValueChanged(app, event)
+            value = app.Bf_Spinner.Value;
+            app.maxbf = value;
+            app.Bf_Spinner.Step = app.maxbf*1e-1;
+        end
+
+        % Button pushed function: Bf_ResetButton
+        function Bf_ResetButtonPushed(app, event)
+            app.Bf_Spinner.Value = str2double(app.BfLabel_Value.Text);
+            app.maxbf = app.Bf_Spinner.Value;
+            app.Bf_Spinner.Step = app.maxbf * 1e-1;
+        end
+
+        % Button pushed function: Button_path_project
+        function Button_path_projectPushed(app, event)
+            path = uigetdir();
+            drawnow;
+            figure(app.UIFigure);
+            app.TextArea_project.Value = path;
+        end
+
+        % Button pushed function: Button_path_spice
+        function Button_path_spicePushed(app, event)
+            [file,path] = uigetfile('*.exe');
+            drawnow;
+            figure(app.UIFigure);
+            app.TextArea_spice.Value = string([path,file]);
+        end
+
+        % Close request function: UIFigure
+        function UIFigureCloseRequest(app, event)
+            fid = fopen("paths.txt",'wt+');
+            if (app.CheckBox.Value == 1)&&(fid ~= 1)&&(~isempty(char(app.TextArea_table.Value)))&&(~isempty(char(app.TextArea_project.Value)))&&(~isempty(char(app.TextArea_spice.Value)))
+                fprintf(fid,'%s|%s|%s|%s', string(app.TextArea_table.Value), string(app.TextArea_project.Value), string(app.TextArea_spice.Value),1);
+            else
+                fprintf(fid,'%s',0);
+            end
+            fid = fclose(fid);
+            delete(app.Param_window)
+            delete(app)
+        end
+
+        % Button pushed function: ParamButton
+        function ParamButtonPushed(app, event)
+            app.ParamButton.Enable = "off";      
+            app.Param_window = Param_table(app);
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 1101 655];
+            app.UIFigure.Name = 'UI Figure';
+            app.UIFigure.Resize = 'off';
+            app.UIFigure.CloseRequestFcn = createCallbackFcn(app, @UIFigureCloseRequest, true);
+
+            % Create nfLabel_string
+            app.nfLabel_string = uilabel(app.UIFigure);
+            app.nfLabel_string.FontWeight = 'bold';
+            app.nfLabel_string.Position = [13 214 44 23];
+            app.nfLabel_string.Text = 'nf = ';
+
+            % Create RsLabel_string
+            app.RsLabel_string = uilabel(app.UIFigure);
+            app.RsLabel_string.FontWeight = 'bold';
+            app.RsLabel_string.Position = [13 317 46 23];
+            app.RsLabel_string.Text = 'VAF =';
+
+            % Create U0Label_string
+            app.U0Label_string = uilabel(app.UIFigure);
+            app.U0Label_string.FontWeight = 'bold';
+            app.U0Label_string.Position = [13 283 44 23];
+            app.U0Label_string.Text = 'Rc = ';
+
+            % Create VAFLabel_Value
+            app.VAFLabel_Value = uilabel(app.UIFigure);
+            app.VAFLabel_Value.Position = [187 317 83 22];
+            app.VAFLabel_Value.Text = '';
+
+            % Create RCLabel_Value
+            app.RCLabel_Value = uilabel(app.UIFigure);
+            app.RCLabel_Value.Position = [187 284 83 22];
+            app.RCLabel_Value.Text = '';
+
+            % Create nfLabel_Value
+            app.nfLabel_Value = uilabel(app.UIFigure);
+            app.nfLabel_Value.Position = [187 215 83 22];
+            app.nfLabel_Value.Text = '';
+
+            % Create Label_TransferBox
+            app.Label_TransferBox = uilabel(app.UIFigure);
+            app.Label_TransferBox.HorizontalAlignment = 'right';
+            app.Label_TransferBox.Enable = 'off';
+            app.Label_TransferBox.Position = [971 605 126 22];
+            app.Label_TransferBox.Text = {'Выбор характеристик'; ''};
+
+            % Create TransferBox
+            app.TransferBox = uilistbox(app.UIFigure);
+            app.TransferBox.Items = {};
+            app.TransferBox.Multiselect = 'on';
+            app.TransferBox.ValueChangedFcn = createCallbackFcn(app, @TransferBoxValueChanged, true);
+            app.TransferBox.Enable = 'off';
+            app.TransferBox.Position = [984 367 100 237];
+            app.TransferBox.Value = {};
+
+            % Create Label_OutputBox
+            app.Label_OutputBox = uilabel(app.UIFigure);
+            app.Label_OutputBox.HorizontalAlignment = 'right';
+            app.Label_OutputBox.Enable = 'off';
+            app.Label_OutputBox.Position = [971 284 126 22];
+            app.Label_OutputBox.Text = {'Выбор характеристик'; ''};
+
+            % Create OutputBox
+            app.OutputBox = uilistbox(app.UIFigure);
+            app.OutputBox.Items = {};
+            app.OutputBox.Multiselect = 'on';
+            app.OutputBox.ValueChangedFcn = createCallbackFcn(app, @OutputBoxValueChanged, true);
+            app.OutputBox.Enable = 'off';
+            app.OutputBox.Position = [984 54 100 231];
+            app.OutputBox.Value = {};
+
+            % Create Button_Spice
+            app.Button_Spice = uibutton(app.UIFigure, 'push');
+            app.Button_Spice.ButtonPushedFcn = createCallbackFcn(app, @Button_SpicePushed, true);
+            app.Button_Spice.Position = [308 317 105 22];
+            app.Button_Spice.Text = 'Моделирование';
+
+            % Create Transfer_logX_Check
+            app.Transfer_logX_Check = uicheckbox(app.UIFigure);
+            app.Transfer_logX_Check.ValueChangedFcn = createCallbackFcn(app, @Transfer_logX_CheckValueChanged, true);
+            app.Transfer_logX_Check.Text = 'logX';
+            app.Transfer_logX_Check.Position = [938 324 46 22];
+
+            % Create Transfer_logY_Check
+            app.Transfer_logY_Check = uicheckbox(app.UIFigure);
+            app.Transfer_logY_Check.ValueChangedFcn = createCallbackFcn(app, @Transfer_logY_CheckValueChanged, true);
+            app.Transfer_logY_Check.Text = 'logY';
+            app.Transfer_logY_Check.Position = [443 602 46 22];
+
+            % Create Output_logY_Check
+            app.Output_logY_Check = uicheckbox(app.UIFigure);
+            app.Output_logY_Check.ValueChangedFcn = createCallbackFcn(app, @Output_logY_CheckValueChanged, true);
+            app.Output_logY_Check.Text = 'logY';
+            app.Output_logY_Check.Position = [443 284 46 22];
+
+            % Create Output_logX_Check
+            app.Output_logX_Check = uicheckbox(app.UIFigure);
+            app.Output_logX_Check.ValueChangedFcn = createCallbackFcn(app, @Output_logX_CheckValueChanged, true);
+            app.Output_logX_Check.Text = 'logX';
+            app.Output_logX_Check.Position = [938 6 46 22];
+
+            % Create RbLabel_string
+            app.RbLabel_string = uilabel(app.UIFigure);
+            app.RbLabel_string.FontWeight = 'bold';
+            app.RbLabel_string.Position = [13 183 44 23];
+            app.RbLabel_string.Text = 'Rb=';
+
+            % Create RbLabel_Value
+            app.RbLabel_Value = uilabel(app.UIFigure);
+            app.RbLabel_Value.Position = [189 184 83 22];
+            app.RbLabel_Value.Text = '';
+
+            % Create IsLabel_string
+            app.IsLabel_string = uilabel(app.UIFigure);
+            app.IsLabel_string.FontWeight = 'bold';
+            app.IsLabel_string.Position = [12 252 44 22];
+            app.IsLabel_string.Text = 'Is = ';
+
+            % Create IsLabel_Value
+            app.IsLabel_Value = uilabel(app.UIFigure);
+            app.IsLabel_Value.Position = [188 251 83 22];
+            app.IsLabel_Value.Text = '';
+
+            % Create Is_Spinner
+            app.Is_Spinner = uispinner(app.UIFigure);
+            app.Is_Spinner.ValueChangedFcn = createCallbackFcn(app, @Is_SpinnerValueChanged, true);
+            app.Is_Spinner.Position = [56 251 107 22];
+
+            % Create Rb_Spinner
+            app.Rb_Spinner = uispinner(app.UIFigure);
+            app.Rb_Spinner.ValueChangedFcn = createCallbackFcn(app, @Rb_SpinnerValueChanged, true);
+            app.Rb_Spinner.Position = [57 184 107 22];
+
+            % Create VAF_Spinner
+            app.VAF_Spinner = uispinner(app.UIFigure);
+            app.VAF_Spinner.ValueChangedFcn = createCallbackFcn(app, @VAF_SpinnerValueChanged, true);
+            app.VAF_Spinner.Position = [57 318 107 22];
+
+            % Create RC_Spinner
+            app.RC_Spinner = uispinner(app.UIFigure);
+            app.RC_Spinner.ValueChangedFcn = createCallbackFcn(app, @RC_SpinnerValueChanged, true);
+            app.RC_Spinner.Position = [57 284 107 22];
+
+            % Create nf_Spinner
+            app.nf_Spinner = uispinner(app.UIFigure);
+            app.nf_Spinner.ValueChangedFcn = createCallbackFcn(app, @nf_SpinnerValueChanged, true);
+            app.nf_Spinner.Position = [57 217 107 22];
+
+            % Create Is_ResetButton
+            app.Is_ResetButton = uibutton(app.UIFigure, 'push');
+            app.Is_ResetButton.ButtonPushedFcn = createCallbackFcn(app, @Is_ResetButtonPushed, true);
+            app.Is_ResetButton.Position = [163 251 18 22];
+            app.Is_ResetButton.Text = 'r';
+
+            % Create Rb_ResetButton
+            app.Rb_ResetButton = uibutton(app.UIFigure, 'push');
+            app.Rb_ResetButton.ButtonPushedFcn = createCallbackFcn(app, @Rb_ResetButtonPushed, true);
+            app.Rb_ResetButton.Position = [163 184 18 22];
+            app.Rb_ResetButton.Text = 'r';
+
+            % Create VAF_ResetButton
+            app.VAF_ResetButton = uibutton(app.UIFigure, 'push');
+            app.VAF_ResetButton.ButtonPushedFcn = createCallbackFcn(app, @VAF_ResetButtonPushed, true);
+            app.VAF_ResetButton.Position = [162 318 18 22];
+            app.VAF_ResetButton.Text = 'r';
+
+            % Create RC_ResetButton
+            app.RC_ResetButton = uibutton(app.UIFigure, 'push');
+            app.RC_ResetButton.ButtonPushedFcn = createCallbackFcn(app, @RC_ResetButtonPushed, true);
+            app.RC_ResetButton.Position = [162 284 18 22];
+            app.RC_ResetButton.Text = 'r';
+
+            % Create nf_ResetButton
+            app.nf_ResetButton = uibutton(app.UIFigure, 'push');
+            app.nf_ResetButton.ButtonPushedFcn = createCallbackFcn(app, @nf_ResetButtonPushed, true);
+            app.nf_ResetButton.Position = [163 215 18 22];
+            app.nf_ResetButton.Text = 'r';
+
+            % Create Bf_Spinner
+            app.Bf_Spinner = uispinner(app.UIFigure);
+            app.Bf_Spinner.ValueChangedFcn = createCallbackFcn(app, @Bf_SpinnerValueChanged, true);
+            app.Bf_Spinner.Position = [56 150 107 22];
+
+            % Create Bf_ResetButton
+            app.Bf_ResetButton = uibutton(app.UIFigure, 'push');
+            app.Bf_ResetButton.ButtonPushedFcn = createCallbackFcn(app, @Bf_ResetButtonPushed, true);
+            app.Bf_ResetButton.Position = [162 150 18 22];
+            app.Bf_ResetButton.Text = 'r';
+
+            % Create BfLabel_string
+            app.BfLabel_string = uilabel(app.UIFigure);
+            app.BfLabel_string.FontWeight = 'bold';
+            app.BfLabel_string.Position = [13 150 25 23];
+            app.BfLabel_string.Text = 'Bf=';
+
+            % Create BfLabel_Value
+            app.BfLabel_Value = uilabel(app.UIFigure);
+            app.BfLabel_Value.Position = [187 151 83 22];
+            app.BfLabel_Value.Text = '';
+
+            % Create Label_party
+            app.Label_party = uilabel(app.UIFigure);
+            app.Label_party.Position = [444 634 154 22];
+            app.Label_party.Text = 'Номер элемента в партии:';
+
+            % Create Label_party_number
+            app.Label_party_number = uilabel(app.UIFigure);
+            app.Label_party_number.Visible = 'off';
+            app.Label_party_number.Position = [597 634 25 22];
+            app.Label_party_number.Text = '1';
+
+            % Create ButtonGroup
+            app.ButtonGroup = uibuttongroup(app.UIFigure);
+            app.ButtonGroup.Title = 'Пути файлов';
+            app.ButtonGroup.Position = [20 345 334 290];
+
+            % Create Label
+            app.Label = uilabel(app.ButtonGroup);
+            app.Label.HorizontalAlignment = 'right';
+            app.Label.Position = [9 236 163 22];
+            app.Label.Text = 'Измеренные характеристики';
+
+            % Create TextArea_table
+            app.TextArea_table = uitextarea(app.ButtonGroup);
+            app.TextArea_table.Editable = 'off';
+            app.TextArea_table.Position = [9 219 316 21];
+
+            % Create Button_path_table
+            app.Button_path_table = uibutton(app.ButtonGroup, 'push');
+            app.Button_path_table.ButtonPushedFcn = createCallbackFcn(app, @Button_path_tablePushed, true);
+            app.Button_path_table.Position = [9 198 100 22];
+            app.Button_path_table.Text = 'Выбрать файл';
+
+            % Create Label_2
+            app.Label_2 = uilabel(app.ButtonGroup);
+            app.Label_2.Position = [9 153 163 22];
+            app.Label_2.Text = 'Папка проекта';
+
+            % Create TextArea_project
+            app.TextArea_project = uitextarea(app.ButtonGroup);
+            app.TextArea_project.Editable = 'off';
+            app.TextArea_project.Position = [9 136 316 21];
+
+            % Create Button_path_project
+            app.Button_path_project = uibutton(app.ButtonGroup, 'push');
+            app.Button_path_project.ButtonPushedFcn = createCallbackFcn(app, @Button_path_projectPushed, true);
+            app.Button_path_project.Position = [9 115 100 22];
+            app.Button_path_project.Text = 'Выбрать папку';
+
+            % Create Button_path_spice
+            app.Button_path_spice = uibutton(app.ButtonGroup, 'push');
+            app.Button_path_spice.ButtonPushedFcn = createCallbackFcn(app, @Button_path_spicePushed, true);
+            app.Button_path_spice.Position = [9 38 100 22];
+            app.Button_path_spice.Text = 'Выбрать файл';
+
+            % Create LTSpiceTextAreaLabel
+            app.LTSpiceTextAreaLabel = uilabel(app.ButtonGroup);
+            app.LTSpiceTextAreaLabel.Position = [9 76 163 22];
+            app.LTSpiceTextAreaLabel.Text = 'LTSpice';
+
+            % Create TextArea_spice
+            app.TextArea_spice = uitextarea(app.ButtonGroup);
+            app.TextArea_spice.Editable = 'off';
+            app.TextArea_spice.Position = [9 59 316 21];
+
+            % Create CheckBox
+            app.CheckBox = uicheckbox(app.ButtonGroup);
+            app.CheckBox.Text = 'Сохранить пути';
+            app.CheckBox.Position = [224 1 110 22];
+
+            % Create ParamButton
+            app.ParamButton = uibutton(app.UIFigure, 'push');
+            app.ParamButton.ButtonPushedFcn = createCallbackFcn(app, @ParamButtonPushed, true);
+            app.ParamButton.Position = [29 47 100 22];
+            app.ParamButton.Text = 'Параметры';
+
+            % Create UIAxes_Transfer
+            app.UIAxes_Transfer = uiaxes(app.UIFigure);
+            title(app.UIAxes_Transfer, 'Входные характеристики')
+            xlabel(app.UIAxes_Transfer, 'Uкэ')
+            ylabel(app.UIAxes_Transfer, 'Iб')
+            app.UIAxes_Transfer.PlotBoxAspectRatio = [2.1844262295082 1 1];
+            app.UIAxes_Transfer.Position = [402 324 582 300];
+
+            % Create UIAxes_Output
+            app.UIAxes_Output = uiaxes(app.UIFigure);
+            title(app.UIAxes_Output, 'Выходные характеристики')
+            xlabel(app.UIAxes_Output, 'Uкэ')
+            ylabel(app.UIAxes_Output, 'Iк')
+            app.UIAxes_Output.PlotBoxAspectRatio = [2.18367346938776 1 1];
+            app.UIAxes_Output.Position = [402 6 582 300];
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = Params_extraction_20
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            % Execute the startup function
+            runStartupFcn(app, @startupFcn)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
